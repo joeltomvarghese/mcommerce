@@ -1,141 +1,103 @@
 <?php
-// Start the session at the very beginning
+// ✅ Start a fresh session (destroy old one to avoid redirect loop)
+session_start();
+session_unset();
+session_destroy();
 session_start();
 
-// Include config file
-require_once "db_config.php";
+// ✅ Include database config
+require_once __DIR__ . '/../includes/db_config.php';
 
-$username = $email = $password = $error = "";
+$message = "";
 
-if($_SERVER["REQUEST_METHOD"] == "POST"){
+// ✅ Handle form submission
+if ($_SERVER["REQUEST_METHOD"] === "POST") {
+    $username = isset($_POST["username"]) ? trim($_POST["username"]) : "";
+    $email = isset($_POST["email"]) ? trim($_POST["email"]) : "";
+    $password = isset($_POST["password"]) ? trim($_POST["password"]) : "";
 
     // Validate inputs
-    if(empty(trim($_POST["username"])) || empty(trim($_POST["email"])) || empty(trim($_POST["password"]))){
-        $error = "Please fill in all fields.";
+    if ($username === "" || $email === "" || $password === "") {
+        $message = "⚠️ All fields are required.";
     } else {
-        $username = trim($_POST["username"]);
-        $email = trim($_POST["email"]);
-        $password = trim($_POST["password"]);
+        // ✅ Check if username already exists
+        $check_sql = "SELECT id FROM users WHERE username = ?";
+        if ($check_stmt = mysqli_prepare($conn, $check_sql)) {
+            mysqli_stmt_bind_param($check_stmt, "s", $username);
+            mysqli_stmt_execute($check_stmt);
+            mysqli_stmt_store_result($check_stmt);
 
-        // Check if username or email already exists using prepared statements
-        $sql = "SELECT id FROM users WHERE username = ? OR email = ?";
-        if($stmt = $conn->prepare($sql)){
-            $stmt->bind_param("ss", $param_username, $param_email);
-            $param_username = $username;
-            $param_email = $email;
-            
-            if($stmt->execute()){
-                $stmt->store_result();
-                
-                if($stmt->num_rows > 0){
-                    $error = "This username or email is already taken.";
-                } else {
-                    // Hash the password securely
-                    $password_hash = password_hash($password, PASSWORD_DEFAULT);
-                    
-                    // Insert new user into the database
-                    $sql_insert = "INSERT INTO users (username, email, password_hash) VALUES (?, ?, ?)";
-                    
-                    if($stmt_insert = $conn->prepare($sql_insert)){
-                        $stmt_insert->bind_param("sss", $param_username, $param_email, $param_password_hash);
-                        $param_password_hash = $password_hash;
-                        
-                        if($stmt_insert->execute()){
-                            // Redirect to login page
-                            header("location: login.php?registered=success");
-                            exit();
-                        } else {
-                            $error = "Oops! Something went wrong. Please try again later.";
-                        }
-                        $stmt_insert->close();
-                    }
-                }
+            if (mysqli_stmt_num_rows($check_stmt) > 0) {
+                $message = "❌ Username already taken. Please choose another.";
             } else {
-                $error = "Database execution error.";
+                // ✅ Hash password before storing
+                $hashed_password = password_hash($password, PASSWORD_DEFAULT);
+
+                // ✅ Insert new user into the database
+                $sql = "INSERT INTO users (username, email, password_hash, created_at) VALUES (?, ?, ?, NOW())";
+                if ($stmt = mysqli_prepare($conn, $sql)) {
+                    mysqli_stmt_bind_param($stmt, "sss", $username, $email, $hashed_password);
+                    if (mysqli_stmt_execute($stmt)) {
+                        $message = "✅ Registration successful! <a href='login.php'>Login here</a>";
+                    } else {
+                        $message = "❌ Database error: " . mysqli_error($conn);
+                    }
+                    mysqli_stmt_close($stmt);
+                } else {
+                    $message = "❌ Failed to prepare statement: " . mysqli_error($conn);
+                }
             }
-            $stmt->close();
+            mysqli_stmt_close($check_stmt);
         }
     }
-    
-    // Close connection
-    $conn->close();
+
+    mysqli_close($conn);
 }
 ?>
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>M-Commerce Register</title>
-    <!-- Tailwind CSS CDN for responsive styling -->
-    <script src="https://cdn.tailwindcss.com"></script>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
-    <script>
-        tailwind.config = {
-            theme: {
-                extend: {
-                    fontFamily: {
-                        sans: ['Inter', 'sans-serif'],
-                    },
-                }
-            }
-        }
-    </script>
+    <title>User Registration - MCommerce</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
 </head>
-<body class="bg-gray-50 min-h-screen flex items-center justify-center font-sans">
-    <div class="w-full max-w-md bg-white p-8 rounded-xl shadow-2xl border border-gray-100">
-        <div class="text-center mb-6">
-            <i class="fas fa-mobile-alt text-4xl text-indigo-600 mb-3"></i>
-            <h2 class="text-3xl font-extrabold text-gray-900">
-                Register Account
-            </h2>
-            <p class="mt-2 text-sm text-gray-600">
-                Create your M-Commerce profile.
+<body class="bg-light">
+
+<div class="container mt-5">
+    <div class="card mx-auto shadow-lg" style="max-width: 500px;">
+        <div class="card-body">
+            <h3 class="card-title text-center mb-4 text-primary fw-bold">Create an Account</h3>
+
+            <?php if (!empty($message)): ?>
+                <div class="alert alert-info text-center"><?= $message ?></div>
+            <?php endif; ?>
+
+            <form method="POST" action="">
+                <div class="mb-3">
+                    <label class="form-label fw-semibold">Username</label>
+                    <input type="text" name="username" class="form-control" required>
+                </div>
+
+                <div class="mb-3">
+                    <label class="form-label fw-semibold">Email</label>
+                    <input type="email" name="email" class="form-control" required>
+                </div>
+
+                <div class="mb-3">
+                    <label class="form-label fw-semibold">Password</label>
+                    <input type="password" name="password" class="form-control" required>
+                </div>
+
+                <button type="submit" class="btn btn-primary w-100 fw-bold">Register</button>
+            </form>
+
+            <p class="text-center mt-3 mb-0">
+                Already have an account? 
+                <a href="login.php" class="text-decoration-none fw-semibold">Login here</a>
             </p>
         </div>
-
-        <?php if (!empty($error)): ?>
-            <div class="p-4 mb-4 text-sm text-red-800 rounded-lg bg-red-50 text-center" role="alert">
-                <?php echo $error; ?>
-            </div>
-        <?php endif; ?>
-
-        <form action="<?php echo htmlspecialchars($_SERVER["PHP_SELF"]); ?>" method="post" class="space-y-6">
-            <div>
-                <label for="username" class="block text-sm font-medium text-gray-700">Username</label>
-                <div class="mt-1">
-                    <input id="username" name="username" type="text" required class="appearance-none block w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm placeholder-gray-400 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm">
-                </div>
-            </div>
-
-            <div>
-                <label for="email" class="block text-sm font-medium text-gray-700">Email address</label>
-                <div class="mt-1">
-                    <input id="email" name="email" type="email" required class="appearance-none block w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm placeholder-gray-400 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm">
-                </div>
-            </div>
-
-            <div>
-                <label for="password" class="block text-sm font-medium text-gray-700">Password</label>
-                <div class="mt-1">
-                    <input id="password" name="password" type="password" required class="appearance-none block w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm placeholder-gray-400 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm">
-                </div>
-            </div>
-
-            <div>
-                <button type="submit" class="w-full flex justify-center py-2 px-4 border border-transparent rounded-lg shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition duration-150 ease-in-out">
-                    Create Account
-                </button>
-            </div>
-        </form>
-
-        <p class="mt-6 text-center text-sm text-gray-600">
-            Already have an account?
-            <a href="login.php" class="font-medium text-indigo-600 hover:text-indigo-500">
-                Sign in
-            </a>
-        </p>
     </div>
+</div>
+
 </body>
 </html>

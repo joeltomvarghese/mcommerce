@@ -1,144 +1,146 @@
 <?php
-// Start the session at the very beginning
+// Start session
 session_start();
 
-// Check if the user is already logged in, redirect to index
-if(isset($_SESSION["loggedin"]) && $_SESSION["loggedin"] === true){
-    header("location: index.php");
+// If user already logged in, redirect to index
+if (isset($_SESSION["loggedin"]) && $_SESSION["loggedin"] === true) {
+    header("Location: index.php");
     exit;
 }
 
-require_once "db_config.php";
+// ✅ Include database configuration
+require_once __DIR__ . '/db_config.php';
 
-$username = $password = $error = "";
+// Initialize variables
+$username = $password = "";
+$username_err = $password_err = $login_err = "";
 
-if($_SERVER["REQUEST_METHOD"] == "POST"){
-    
-    // Get form data
-    $username = trim($_POST["username"]);
-    $password = trim($_POST["password"]);
+// Process login form
+if ($_SERVER["REQUEST_METHOD"] === "POST") {
 
-    if(empty($username) || empty($password)){
-        $error = "Please enter both username and password.";
+    // Validate username
+    if (empty(trim($_POST["username"]))) {
+        $username_err = "Please enter your username.";
     } else {
-        // Prepare a select statement
+        $username = trim($_POST["username"]);
+    }
+
+    // Validate password
+    if (empty(trim($_POST["password"]))) {
+        $password_err = "Please enter your password.";
+    } else {
+        $password = trim($_POST["password"]);
+    }
+
+    // If no errors, try login
+    if (empty($username_err) && empty($password_err)) {
+
         $sql = "SELECT id, username, password_hash FROM users WHERE username = ?";
-        
-        if($stmt = $conn->prepare($sql)){
-            $stmt->bind_param("s", $param_username);
+
+        if ($stmt = mysqli_prepare($conn, $sql)) {
+            mysqli_stmt_bind_param($stmt, "s", $param_username);
             $param_username = $username;
-            
-            if($stmt->execute()){
-                $stmt->store_result();
-                
-                // Check if username exists
-                if($stmt->num_rows == 1){                    
-                    // Bind result variables
-                    $stmt->bind_result($id, $username, $hashed_password);
-                    if($stmt->fetch()){
-                        // Verify password
-                        if(password_verify($password, $hashed_password)){
-                            // Password is correct, start a new session
+
+            if (mysqli_stmt_execute($stmt)) {
+                mysqli_stmt_store_result($stmt);
+
+                if (mysqli_stmt_num_rows($stmt) == 1) {
+                    mysqli_stmt_bind_result($stmt, $id, $username, $hashed_password);
+                    if (mysqli_stmt_fetch($stmt)) {
+                        if (password_verify($password, $hashed_password)) {
+                            // ✅ Successful login
+                            session_regenerate_id(true); // Prevent session fixation
                             $_SESSION["loggedin"] = true;
                             $_SESSION["id"] = $id;
-                            $_SESSION["username"] = $username;                            
-                            
-                            // Redirect user to welcome page
-                            header("location: index.php");
-                        } else{
-                            // Display an error message if password is not valid
-                            $error = "Invalid username or password.";
+                            $_SESSION["username"] = $username;
+
+                            header("Location: index.php");
+                            exit;
+                        } else {
+                            $login_err = "Invalid username or password.";
                         }
                     }
-                } else{
-                    // Display an error message if username doesn't exist
-                    $error = "Invalid username or password.";
+                } else {
+                    $login_err = "Invalid username or password.";
                 }
-            } else{
-                $error = "Oops! Something went wrong. Please try again later.";
+            } else {
+                $login_err = "Something went wrong. Please try again later.";
             }
 
-            // Close statement
-            $stmt->close();
+            mysqli_stmt_close($stmt);
         }
     }
-    
-    // Close connection
-    $conn->close();
+
+    mysqli_close($conn);
 }
 ?>
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>M-Commerce Login</title>
+    <title>Login - GadgetHut</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
-    <script>
-        tailwind.config = {
-            theme: {
-                extend: {
-                    fontFamily: {
-                        sans: ['Inter', 'sans-serif'],
-                    },
-                }
-            }
-        }
-    </script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap');
+        body { font-family: 'Inter', sans-serif; background-color: #f8f9fa; }
+    </style>
 </head>
-<body class="bg-gray-50 min-h-screen flex items-center justify-center font-sans">
-    <div class="w-full max-w-md bg-white p-8 rounded-xl shadow-2xl border border-gray-100">
-        <div class="text-center mb-6">
-            <i class="fas fa-lock text-4xl text-indigo-600 mb-3"></i>
-            <h2 class="text-3xl font-extrabold text-gray-900">
-                Sign in to M-Commerce
-            </h2>
+<body class="flex items-center justify-center min-h-screen bg-gray-100">
+
+<div class="w-full max-w-md bg-white p-8 rounded-xl shadow-lg">
+    <h2 class="text-3xl font-bold mb-6 text-center text-gray-800">Login</h2>
+
+    <?php if (!empty($login_err)): ?>
+        <div class="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">
+            <?= htmlspecialchars($login_err) ?>
+        </div>
+    <?php endif; ?>
+
+    <form action="<?= htmlspecialchars($_SERVER["PHP_SELF"]); ?>" method="post" class="space-y-6">
+        <div>
+            <label for="username" class="block text-sm font-medium text-gray-700 mb-1">Username</label>
+            <input type="text" name="username" id="username" value="<?= htmlspecialchars($username) ?>"
+                   class="w-full px-4 py-2 border rounded-lg focus:ring-blue-500 focus:border-blue-500 <?= !empty($username_err) ? 'border-red-500' : 'border-gray-300' ?>"
+                   required>
+            <?php if (!empty($username_err)): ?>
+                <p class="text-red-500 text-xs mt-1"><?= htmlspecialchars($username_err) ?></p>
+            <?php endif; ?>
         </div>
 
-        <?php 
-        // Display success message after registration
-        if(isset($_GET['registered']) && $_GET['registered'] == 'success'): ?>
-            <div class="p-4 mb-4 text-sm text-green-800 rounded-lg bg-green-50 text-center" role="alert">
-                Registration successful! Please log in.
-            </div>
-        <?php endif; ?>
+        <div>
+            <label for="password" class="block text-sm font-medium text-gray-700 mb-1">Password</label>
+            <input type="password" name="password" id="password"
+                   class="w-full px-4 py-2 border rounded-lg focus:ring-blue-500 focus:border-blue-500 <?= !empty($password_err) ? 'border-red-500' : 'border-gray-300' ?>"
+                   required>
+            <?php if (!empty($password_err)): ?>
+                <p class="text-red-500 text-xs mt-1"><?= htmlspecialchars($password_err) ?></p>
+            <?php endif; ?>
+        </div>
 
-        <?php if (!empty($error)): ?>
-            <div class="p-4 mb-4 text-sm text-red-800 rounded-lg bg-red-50 text-center" role="alert">
-                <?php echo $error; ?>
-            </div>
-        <?php endif; ?>
+        <button type="submit"
+                class="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 rounded-lg shadow-md transition duration-200">
+            Login
+        </button>
+    </form>
 
-        <form action="<?php echo htmlspecialchars($_SERVER["PHP_SELF"]); ?>" method="post" class="space-y-6">
-            <div>
-                <label for="username" class="block text-sm font-medium text-gray-700">Username</label>
-                <div class="mt-1">
-                    <input id="username" name="username" type="text" required class="appearance-none block w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm placeholder-gray-400 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm">
-                </div>
-            </div>
+    <p class="text-center text-sm text-gray-600 mt-6">
+        Don't have an account?
+        <a href="register.php" class="text-blue-600 hover:text-blue-800 font-semibold">Sign up here</a>.
+    </p>
+</div>
 
-            <div>
-                <label for="password" class="block text-sm font-medium text-gray-700">Password</label>
-                <div class="mt-1">
-                    <input id="password" name="password" type="password" required class="appearance-none block w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm placeholder-gray-400 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm">
-                </div>
-            </div>
+<script>
+// Prevent going back to secured pages after logout
+if (window.history.replaceState) {
+    window.history.replaceState(null, null, window.location.href);
+}
 
-            <div>
-                <button type="submit" class="w-full flex justify-center py-2 px-4 border border-transparent rounded-lg shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition duration-150 ease-in-out">
-                    Sign In
-                </button>
-            </div>
-        </form>
+// Clear forward history
+window.addEventListener('popstate', function(event) {
+    window.history.forward();
+});
+</script>
 
-        <p class="mt-6 text-center text-sm text-gray-600">
-            Don't have an account?
-            <a href="register.php" class="font-medium text-indigo-600 hover:text-indigo-500">
-                Register here
-            </a>
-        </p>
-    </div>
 </body>
 </html>
